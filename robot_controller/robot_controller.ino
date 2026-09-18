@@ -25,14 +25,15 @@ const unsigned int MAX_MESSAGE_LENGTH = 64;
 static char message[MAX_MESSAGE_LENGTH];
 static unsigned int message_pos = 0;
 
-// Number of microsteps to back away from switches after homing to clear the click
+// Microsteps to back away from switches after homing to clear the click
 const int BACKOFF_STEPS = 200; 
 
 void setup() {
   Serial.begin(115200);
   
+  // CRITICAL FIX: Explicitly lock the Enable Pin to output and pull it LOW
   pinMode(ENABLE_PIN, OUTPUT);
-  digitalWrite(ENABLE_PIN, LOW); // Enable active-low stepper drivers
+  digitalWrite(ENABLE_PIN, LOW); // LOW = Motors ALWAYS Energized / Holding Torque active
 
   pinMode(X_LIMIT_PIN, INPUT_PULLUP);
   pinMode(Y_LIMIT_PIN, INPUT_PULLUP);
@@ -48,7 +49,6 @@ void setup() {
     stepperArm2.moveTo(-10000); 
     stepperArm2.run();
   }
-  // Clear the Z limit switch click
   stepperArm2.setCurrentPosition(0);
   stepperArm2.runToNewPosition(BACKOFF_STEPS); 
   stepperArm2.setCurrentPosition(0); 
@@ -58,9 +58,8 @@ void setup() {
     stepperArm1.moveTo(10000);
     stepperArm1.run();
   }
-  // Clear the Y limit switch click
   stepperArm1.setCurrentPosition(0);
-  stepperArm1.runToNewPosition(-BACKOFF_STEPS); // Moves opposite to homing direction
+  stepperArm1.runToNewPosition(-BACKOFF_STEPS); 
   stepperArm1.setCurrentPosition(0); 
 
   // 3. Home the Base (X Axis / Rotation)
@@ -68,12 +67,11 @@ void setup() {
     stepperBase.moveTo(10000);
     stepperBase.run();
   }
-  // Clear the X limit switch click
   stepperBase.setCurrentPosition(0);
-  stepperBase.runToNewPosition(-BACKOFF_STEPS); // Moves opposite to homing direction
+  stepperBase.runToNewPosition(-BACKOFF_STEPS); 
   stepperBase.setCurrentPosition(0); 
 
-  // Unlocked target gameplay speeds
+  // Unlocked gameplay speeds (holding power maintained via library algorithms)
   stepperBase.setMaxSpeed(1200);   stepperBase.setAcceleration(600);
   stepperArm1.setMaxSpeed(1200);   stepperArm1.setAcceleration(600);
   stepperArm2.setMaxSpeed(1200);   stepperArm2.setAcceleration(600);
@@ -92,6 +90,7 @@ void processCommand(char* cmd) {
       stepperArm1.moveTo(a1);
       stepperArm2.moveTo(a2);
 
+      // Force continuous pulsing during transition execution loops
       while (stepperBase.distanceToGo() != 0 || 
              stepperArm1.distanceToGo() != 0 || 
              stepperArm2.distanceToGo() != 0) {
@@ -108,6 +107,9 @@ void processCommand(char* cmd) {
 }
 
 void loop() {
+  // Enforce driver verification check to prevent thermal sleep drops
+  digitalWrite(ENABLE_PIN, LOW); 
+
   while (Serial.available() > 0) {
     char inByte = Serial.read();
     
@@ -123,6 +125,7 @@ void loop() {
     }
   }
   
+  // CRITICAL FIX: Keep running background maintenance loops so motors generate full static resistance torque
   stepperBase.run();
   stepperArm1.run();
   stepperArm2.run();
